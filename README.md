@@ -1,9 +1,4 @@
-# Fast_Keys_1 — Reset 20
+# Fast_Keys_1
+Android IME project for the Persian Fast_Keys_1 keyboard.
 
-Independent Android keyboard project based on the Reset 20 layout.
-
-
-Version 21 adds a small offline word-suggestion row while typing. Tapping a suggestion replaces the current word and adds a space.
-
-
-Fix 6: removed invalid getToken() calls from subtype switching; arrow navigation uses editor DPAD events with selection fallback.
+Base layout: reset 22. Number/symbol keys are square. The project is prepared for GitHub Actions and produces a debug APK.
