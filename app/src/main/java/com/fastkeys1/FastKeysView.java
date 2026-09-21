@@ -20,6 +20,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 
 /**
  * Fast_Keys_1 - Reset 20 fresh UI.
@@ -40,6 +43,7 @@ public class FastKeysView extends android.view.View {
     private boolean persian = true;
     private float transparency = 1f;
     private KeyHit pressedKey;
+    private final ArrayList<String> suggestions = new ArrayList<>();
 
     private static class KeyHit {
         RectF r;
@@ -69,9 +73,17 @@ public class FastKeysView extends android.view.View {
         float gap = dp(1f);
         float y = 0f;
 
+        // Suggestion row is an intentional keyboard row, not an empty top margin.
+        refreshSuggestions();
+        float suggestionH = suggestions.isEmpty() ? 0f : h * 0.095f;
+        if (suggestionH > 0f) {
+            drawSuggestions(c, y, suggestionH, w, gap);
+            y += suggestionH;
+        }
+
         // Reset 20: keyboard starts directly at the first key row.
         // No search/status/header strip and no visible outer frame.
-        float numberH = h * 0.135f;
+        float numberH = h * 0.125f;
         drawNumberRow(c, y, numberH, w, gap);
         y += numberH;
 
@@ -80,6 +92,57 @@ public class FastKeysView extends android.view.View {
         drawLetterRow(c, y, rowH, w, gap, 1); y += rowH;
         drawLetterRow(c, y, rowH, w, gap, 2); y += rowH;
         drawBottom(c, y, h - y, w, gap);
+    }
+
+    private void refreshSuggestions() {
+        suggestions.clear();
+        if (ic == null) return;
+        CharSequence cs = ic.getTextBeforeCursor(64, 0);
+        if (cs == null) return;
+        String text = cs.toString();
+        String[] parts = text.split("\\s+");
+        if (parts.length == 0) return;
+        String prefix = parts[parts.length - 1].trim();
+        if (prefix.isEmpty()) return;
+
+        String[] dictionary = persian ? PERSIAN_WORDS : ENGLISH_WORDS;
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        for (String word : dictionary) {
+            if (word.startsWith(prefix) && !word.equals(prefix)) out.add(word);
+            if (out.size() >= 3) break;
+        }
+        suggestions.addAll(out);
+    }
+
+    private static final String[] ENGLISH_WORDS = {
+            "the","this","that","there","their","then","they","them","these","those",
+            "what","when","where","which","while","with","will","would","could","should",
+            "have","has","had","having","hello","help","here","home","how","however",
+            "from","for","good","great","going","give","get","just","know","like",
+            "make","more","most","much","need","never","new","next","only","please",
+            "really","right","same","some","something","start","still","take","than","thank",
+            "thanks","their","time","today","tomorrow","very","want","well","welcome","work",
+            "yes","you","your","about","after","again","also","always","because","before"
+    };
+
+    private static final String[] PERSIAN_WORDS = {
+            "این","آن","اینجا","آنجا","اگر","امروز","فردا","الان","برای","باید",
+            "بیشتر","بهتر","بعد","با","بدون","بود","باشد","بوده","چطور","چرا",
+            "چه","چیزی","چون","در","درباره","دوست","دوباره","را","روی","روز",
+            "زمان","زیاد","شما","شاید","شد","شده","شود","شما","سلام","صبح",
+            "شب","هم","همین","همه","هنوز","هیچ","یک","یکی","میخواهم","می‌خواهم",
+            "ممنون","متشکرم","لطفا","لطفاً","کمک","کار","کردن","کردم","کنم","کنید",
+            "کجا","کی","کدام","گفت","گفته","گفتن","آمد","آمده","است","هست","هستم",
+            "خواهیم","خواهد","خواهدشد","خوب","خیلی","درست","تازه","تمام","تایپ","کیبورد"
+    };
+
+    private void drawSuggestions(Canvas c, float y, float rh, float w, float gap) {
+        if (suggestions.isEmpty()) return;
+        float cw = (w - gap * (suggestions.size() - 1)) / suggestions.size();
+        for (int i = 0; i < suggestions.size(); i++) {
+            float l = i * (cw + gap);
+            addKey(c, l, y, l + cw, y + rh, suggestions.get(i), 18f, "suggest:" + suggestions.get(i));
+        }
     }
 
     private void drawToolbar(Canvas c, float y, float rh, float w, float gap) {
@@ -243,6 +306,11 @@ public class FastKeysView extends android.view.View {
     }
 
     private void perform(String action) {
+        if (action.startsWith("suggest:")) {
+            String suggestion = action.substring(action.indexOf(':') + 1);
+            replaceCurrentWord(suggestion);
+            return;
+        }
         if (action.startsWith("toolbar:")) {
             int i = Integer.parseInt(action.substring(action.indexOf(':') + 1));
             switch (i) {
@@ -282,6 +350,19 @@ public class FastKeysView extends android.view.View {
         type(action);
     }
 
+    private void replaceCurrentWord(String suggestion) {
+        if (ic == null) return;
+        CharSequence cs = ic.getTextBeforeCursor(64, 0);
+        if (cs == null) return;
+        String text = cs.toString();
+        int i = text.length() - 1;
+        while (i >= 0 && !Character.isWhitespace(text.charAt(i))) i--;
+        int count = text.length() - (i + 1);
+        if (count > 0) ic.deleteSurroundingText(count, 0);
+        ic.commitText(suggestion + " ", 1);
+        invalidate();
+    }
+
     private void sendDpad(int code) {
         if (ic != null) {
             ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
@@ -289,9 +370,9 @@ public class FastKeysView extends android.view.View {
         }
     }
 
-    private void type(String s) { if (ic != null) ic.commitText(s, 1); }
-    private void enter() { if (ic != null) ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)); }
-    private void backspace() { if (ic != null) ic.deleteSurroundingText(1, 0); }
+    private void type(String s) { if (ic != null) { ic.commitText(s, 1); invalidate(); } }
+    private void enter() { if (ic != null) { ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)); invalidate(); } }
+    private void backspace() { if (ic != null) { ic.deleteSurroundingText(1, 0); invalidate(); } }
     private void undo() { if (ic != null) ic.performContextMenuAction(android.R.id.undo); }
     private void redo() { if (ic != null) ic.performContextMenuAction(android.R.id.redo); }
 
