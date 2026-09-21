@@ -13,6 +13,8 @@ import android.graphics.Typeface;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.ExtractedText;
+import android.view.inputmethod.ExtractedTextRequest;
 import android.os.Handler;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -47,6 +49,9 @@ public class FastKeysView extends android.view.View {
     private final ArrayList<String> suggestions = new ArrayList<>();
     private final Handler repeatHandler = new Handler();
     private boolean repeatingBackspace = false;
+    private boolean repeatingSymbol = false;
+    private boolean wasSymbolRepeated = false;
+    private String repeatSymbol = null;
 
     private static class KeyHit {
         RectF r;
@@ -85,8 +90,10 @@ public class FastKeysView extends android.view.View {
         float numberH = h * 0.125f;
         drawNumberRow(c, y, numberH, w, gap);
         if (!suggestions.isEmpty()) {
-            // Replace only the visual content of the top row; the keyboard itself does not move.
+            // Suggestions are drawn over the top row without changing keyboard geometry.
+            // Backspace is always redrawn on top and remains visible and tappable.
             drawSuggestions(c, y, numberH, w, gap);
+            drawBackspaceOverlay(c, y, numberH, w, gap);
         }
         y += numberH;
 
@@ -141,11 +148,20 @@ public class FastKeysView extends android.view.View {
 
     private void drawSuggestions(Canvas c, float y, float rh, float w, float gap) {
         if (suggestions.isEmpty()) return;
-        float cw = (w - gap * (suggestions.size() - 1)) / suggestions.size();
-        for (int i = 0; i < suggestions.size(); i++) {
+        int n = Math.min(3, suggestions.size());
+        float backW = (w - gap * 12) * 1.8f / 13.8f;
+        float usable = w - gap * 3 - backW;
+        float cw = (usable - gap * (n - 1)) / n;
+        for (int i = 0; i < n; i++) {
             float l = i * (cw + gap);
-            addKey(c, l, y, l + cw, y + rh, suggestions.get(i), 18f, "suggest:" + suggestions.get(i));
+            addKey(c, l, y, l + cw, y + rh, suggestions.get(i), 17f, "suggest:" + suggestions.get(i));
         }
+    }
+
+    private void drawBackspaceOverlay(Canvas c, float y, float rh, float w, float gap) {
+        float backW = (w - gap * 12) * 1.8f / 13.8f;
+        float l = w - backW;
+        addKey(c, l, y, w, y + rh, "⌫", 20f, "number:12");
     }
 
     private void drawToolbar(Canvas c, float y, float rh, float w, float gap) {
@@ -292,6 +308,8 @@ public class FastKeysView extends android.view.View {
             pressedKey = findKey(x, y);
             if (pressedKey != null && pressedKey.action.equals("number:12")) {
                 startBackspaceRepeat();
+            } else if (pressedKey != null && isFastRepeatSymbol(pressedKey.action)) {
+                startSymbolRepeat(pressedKey.action);
             }
             invalidate();
             return true;
@@ -309,9 +327,10 @@ public class FastKeysView extends android.view.View {
             invalidate();
             if (e.getAction() == MotionEvent.ACTION_UP && k != null && k.r.contains(x, y)) {
                 // Long-press backspace already performed deletions; a normal tap performs one.
-                if (!k.action.equals("number:12") || !wasBackspaceRepeated) perform(k.action);
+                if ((!k.action.equals("number:12") || !wasBackspaceRepeated) && (!isFastRepeatSymbol(k.action) || !wasSymbolRepeated)) perform(k.action);
             }
             wasBackspaceRepeated = false;
+            wasSymbolRepeated = false;
             return true;
         }
         return true;
@@ -335,7 +354,28 @@ public class FastKeysView extends android.view.View {
 
     private void stopBackspaceRepeat() {
         repeatingBackspace = false;
+        repeatingSymbol = false;
+        repeatSymbol = null;
         repeatHandler.removeCallbacksAndMessages(null);
+    }
+
+    private boolean isFastRepeatSymbol(String a) {
+        return "=".equals(a) || "+".equals(a) || "_".equals(a) || "#".equals(a) || "|".equals(a) || "*".equals(a) || "∆".equals(a);
+    }
+
+    private void startSymbolRepeat(final String symbol) {
+        stopBackspaceRepeat();
+        wasSymbolRepeated = false;
+        repeatSymbol = symbol;
+        repeatingSymbol = true;
+        repeatHandler.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (!repeatingSymbol || repeatSymbol == null) return;
+                type(repeatSymbol);
+                wasSymbolRepeated = true;
+                repeatHandler.postDelayed(this, 55);
+            }
+        }, 180);
     }
 
     private KeyHit findKey(float x, float y) {
@@ -376,13 +416,20 @@ public class FastKeysView extends android.view.View {
         if (action.equals("enter")) { enter(); return; }
         if (action.equals("shift")) { toast(persian ? "شیفت" : "Shift"); return; }
         if (action.equals("space")) { type(" "); return; }
-        if (action.equals("language")) { persian = !persian; invalidate(); return; }
+        if (action.equals("language")) {
+            persian = !persian;
+            if (getContext() instanceof FastKeysInputMethodService) {
+                ((FastKeysInputMethodService) getContext()).switchLanguageSubtype(persian);
+            }
+            invalidate();
+            return;
+        }
         if (action.equals("symbols")) { toast(persian ? "علائم" : "Symbols"); return; }
         if (action.equals("left")) { sendDpad(KeyEvent.KEYCODE_DPAD_LEFT); return; }
         if (action.equals("right")) { sendDpad(KeyEvent.KEYCODE_DPAD_RIGHT); return; }
         if (action.equals("up")) { sendDpad(KeyEvent.KEYCODE_DPAD_UP); return; }
         if (action.equals("down")) { sendDpad(KeyEvent.KEYCODE_DPAD_DOWN); return; }
-        if (action.equals("_") || action.equals("-") || action.equals("~") || action.equals("،") || action.equals(",") || action.equals("؟") || action.equals("?")) {
+        if (action.equals("_") || action.equals("-") || action.equals("~") || action.equals("،") || action.equals(",") || action.equals("؟") || action.equals("?") || action.equals("=") || action.equals("+") || action.equals("#") || action.equals("|") || action.equals("*") || action.equals("∆")) {
             type(action); return;
         }
         type(action);
@@ -402,13 +449,45 @@ public class FastKeysView extends android.view.View {
     }
 
     private void sendDpad(int code) {
-        if (ic != null) {
-            ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
-            ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
+        if (ic == null) return;
+        ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
+        if (et != null && et.text != null) {
+            int pos = Math.max(0, Math.min(et.selectionStart, et.text.length()));
+            int target = pos;
+            if (code == KeyEvent.KEYCODE_DPAD_LEFT) target = Math.max(0, pos - 1);
+            else if (code == KeyEvent.KEYCODE_DPAD_RIGHT) target = Math.min(et.text.length(), pos + 1);
+            else if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                String t = et.text.toString();
+                int lineStart = t.lastIndexOf('\n', Math.max(0, pos - 1)) + 1;
+                int column = pos - lineStart;
+                if (code == KeyEvent.KEYCODE_DPAD_UP && lineStart > 0) {
+                    int prevEnd = lineStart - 1;
+                    int prevStart = t.lastIndexOf('\n', Math.max(0, prevEnd - 1)) + 1;
+                    target = Math.min(prevStart + column, prevEnd);
+                } else if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    int nextStart = t.indexOf('\n', pos);
+                    if (nextStart >= 0) {
+                        nextStart++;
+                        int nextEnd = t.indexOf('\n', nextStart);
+                        if (nextEnd < 0) nextEnd = t.length();
+                        target = Math.min(nextStart + column, nextEnd);
+                    }
+                }
+            }
+            ic.setSelection(target, target);
+            invalidate();
+            return;
         }
+        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
+        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
     }
 
-    private void type(String s) { if (ic != null) { ic.commitText(s, 1); invalidate(); } }
+    public void setPersianLanguage(boolean value) {
+        persian = value;
+        invalidate();
+    }
+
+    private void type(String s) { if (ic != null) { ic.finishComposingText(); ic.commitText(s, 1); invalidate(); } }
     private void enter() { if (ic != null) { ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)); invalidate(); } }
     private void backspace() { if (ic != null) { ic.deleteSurroundingText(1, 0); invalidate(); } }
     private void undo() { if (ic != null) ic.performContextMenuAction(android.R.id.undo); }

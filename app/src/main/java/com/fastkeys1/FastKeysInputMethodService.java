@@ -5,6 +5,10 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodManager;
+import android.view.inputmethod.InputMethodSubtype;
+import android.view.inputmethod.InputMethodInfo;
+import java.util.List;
 
 public class FastKeysInputMethodService extends InputMethodService {
     private View keyboardView;
@@ -36,6 +40,36 @@ public class FastKeysInputMethodService extends InputMethodService {
         view.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, getKeyboardHeight()));
         return view;
+    }
+
+    @Override
+    public void onCurrentInputMethodSubtypeChanged(InputMethodSubtype newSubtype) {
+        super.onCurrentInputMethodSubtypeChanged(newSubtype);
+        if (keyboardView instanceof FastKeysView && newSubtype != null) {
+            String locale = newSubtype.getLocale();
+            ((FastKeysView) keyboardView).setPersianLanguage(locale != null && locale.toLowerCase().startsWith("fa"));
+        }
+    }
+
+    public void switchLanguageSubtype(boolean persian) {
+        try {
+            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm == null || getToken() == null) return;
+            List<InputMethodInfo> list = imm.getEnabledInputMethodList();
+            for (InputMethodInfo info : list) {
+                if (!getPackageName().equals(info.getPackageName())) continue;
+                for (int i = 0; i < info.getSubtypeCount(); i++) {
+                    InputMethodSubtype st = info.getSubtypeAt(i);
+                    String locale = st.getLocale();
+                    boolean isFa = locale != null && locale.toLowerCase().startsWith("fa");
+                    if (isFa == persian) {
+                        imm.setInputMethodAndSubtype(getToken(), info.getId(), st);
+                        return;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     @Override
