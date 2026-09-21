@@ -13,6 +13,7 @@ import android.graphics.Typeface;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.inputmethod.InputConnection;
+import android.os.Handler;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
@@ -44,6 +45,8 @@ public class FastKeysView extends android.view.View {
     private float transparency = 1f;
     private KeyHit pressedKey;
     private final ArrayList<String> suggestions = new ArrayList<>();
+    private final Handler repeatHandler = new Handler();
+    private boolean repeatingBackspace = false;
 
     private static class KeyHit {
         RectF r;
@@ -73,18 +76,18 @@ public class FastKeysView extends android.view.View {
         float gap = dp(1f);
         float y = 0f;
 
-        // Suggestion row is an intentional keyboard row, not an empty top margin.
+        // Suggestions are an overlay: they never change the geometry of the keyboard.
+        // This keeps every key in the same place and prevents accidental taps caused by movement.
         refreshSuggestions();
-        float suggestionH = suggestions.isEmpty() ? 0f : h * 0.095f;
-        if (suggestionH > 0f) {
-            drawSuggestions(c, y, suggestionH, w, gap);
-            y += suggestionH;
-        }
 
         // Reset 20: keyboard starts directly at the first key row.
         // No search/status/header strip and no visible outer frame.
         float numberH = h * 0.125f;
         drawNumberRow(c, y, numberH, w, gap);
+        if (!suggestions.isEmpty()) {
+            // Replace only the visual content of the top row; the keyboard itself does not move.
+            drawSuggestions(c, y, numberH, w, gap);
+        }
         y += numberH;
 
         float rowH = (h - y) / 4f;
@@ -285,19 +288,54 @@ public class FastKeysView extends android.view.View {
 
     @Override public boolean onTouchEvent(MotionEvent e) {
         float x = e.getX(), y = e.getY();
-        if (e.getAction() == MotionEvent.ACTION_DOWN || e.getAction() == MotionEvent.ACTION_MOVE) {
+        if (e.getAction() == MotionEvent.ACTION_DOWN) {
+            pressedKey = findKey(x, y);
+            if (pressedKey != null && pressedKey.action.equals("number:12")) {
+                startBackspaceRepeat();
+            }
+            invalidate();
+            return true;
+        }
+        if (e.getAction() == MotionEvent.ACTION_MOVE) {
+            // Keep the pressed key stable while the finger remains on it.
             pressedKey = findKey(x, y);
             invalidate();
             return true;
         }
-        if (e.getAction() == MotionEvent.ACTION_UP) {
+        if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) {
             KeyHit k = pressedKey;
+            stopBackspaceRepeat();
             pressedKey = null;
             invalidate();
-            if (k != null && k.r.contains(x, y)) perform(k.action);
+            if (e.getAction() == MotionEvent.ACTION_UP && k != null && k.r.contains(x, y)) {
+                // Long-press backspace already performed deletions; a normal tap performs one.
+                if (!k.action.equals("number:12") || !wasBackspaceRepeated) perform(k.action);
+            }
+            wasBackspaceRepeated = false;
             return true;
         }
         return true;
+    }
+
+    private boolean wasBackspaceRepeated = false;
+
+    private void startBackspaceRepeat() {
+        stopBackspaceRepeat();
+        wasBackspaceRepeated = false;
+        repeatHandler.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (!repeatingBackspace) return;
+                backspace();
+                wasBackspaceRepeated = true;
+                repeatHandler.postDelayed(this, 75);
+            }
+        }, 350);
+        repeatingBackspace = true;
+    }
+
+    private void stopBackspaceRepeat() {
+        repeatingBackspace = false;
+        repeatHandler.removeCallbacksAndMessages(null);
     }
 
     private KeyHit findKey(float x, float y) {
