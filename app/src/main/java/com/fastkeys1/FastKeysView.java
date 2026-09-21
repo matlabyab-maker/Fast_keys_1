@@ -418,9 +418,6 @@ public class FastKeysView extends android.view.View {
         if (action.equals("space")) { type(" "); return; }
         if (action.equals("language")) {
             persian = !persian;
-            if (getContext() instanceof FastKeysInputMethodService) {
-                ((FastKeysInputMethodService) getContext()).switchLanguageSubtype(persian);
-            }
             invalidate();
             return;
         }
@@ -450,36 +447,46 @@ public class FastKeysView extends android.view.View {
 
     private void sendDpad(int code) {
         if (ic == null) return;
-        ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
-        if (et != null && et.text != null) {
-            int pos = Math.max(0, Math.min(et.selectionStart, et.text.length()));
-            int target = pos;
-            if (code == KeyEvent.KEYCODE_DPAD_LEFT) target = Math.max(0, pos - 1);
-            else if (code == KeyEvent.KEYCODE_DPAD_RIGHT) target = Math.min(et.text.length(), pos + 1);
-            else if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) {
-                String t = et.text.toString();
-                int lineStart = t.lastIndexOf('\n', Math.max(0, pos - 1)) + 1;
-                int column = pos - lineStart;
-                if (code == KeyEvent.KEYCODE_DPAD_UP && lineStart > 0) {
-                    int prevEnd = lineStart - 1;
-                    int prevStart = t.lastIndexOf('\n', Math.max(0, prevEnd - 1)) + 1;
-                    target = Math.min(prevStart + column, prevEnd);
-                } else if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
-                    int nextStart = t.indexOf('\n', pos);
-                    if (nextStart >= 0) {
-                        nextStart++;
-                        int nextEnd = t.indexOf('\n', nextStart);
-                        if (nextEnd < 0) nextEnd = t.length();
-                        target = Math.min(nextStart + column, nextEnd);
+        // First use the real editor navigation event. This works in editors that
+        // implement cursor navigation themselves.
+        try {
+            long now = System.currentTimeMillis();
+            ic.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0));
+            ic.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, code, 0));
+        } catch (Throwable ignored) {
+        }
+
+        // Then use selection as a fallback for editors that ignore DPAD events.
+        try {
+            ExtractedText et = ic.getExtractedText(new ExtractedTextRequest(), 0);
+            if (et != null && et.text != null && et.selectionStart >= 0) {
+                int pos = Math.max(0, Math.min(et.selectionStart, et.text.length()));
+                int target = pos;
+                if (code == KeyEvent.KEYCODE_DPAD_LEFT) target = Math.max(0, pos - 1);
+                else if (code == KeyEvent.KEYCODE_DPAD_RIGHT) target = Math.min(et.text.length(), pos + 1);
+                else if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                    String t = et.text.toString();
+                    int lineStart = t.lastIndexOf('\n', Math.max(0, pos - 1)) + 1;
+                    int column = pos - lineStart;
+                    if (code == KeyEvent.KEYCODE_DPAD_UP && lineStart > 0) {
+                        int prevEnd = lineStart - 1;
+                        int prevStart = t.lastIndexOf('\n', Math.max(0, prevEnd - 1)) + 1;
+                        target = Math.min(prevStart + column, prevEnd);
+                    } else if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                        int nextStart = t.indexOf('\n', pos);
+                        if (nextStart >= 0) {
+                            nextStart++;
+                            int nextEnd = t.indexOf('\n', nextStart);
+                            if (nextEnd < 0) nextEnd = t.length();
+                            target = Math.min(nextStart + column, nextEnd);
+                        }
                     }
                 }
+                if (target != pos) ic.setSelection(target, target);
             }
-            ic.setSelection(target, target);
-            invalidate();
-            return;
+        } catch (Throwable ignored) {
         }
-        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
-        ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
+        invalidate();
     }
 
     public void setPersianLanguage(boolean value) {

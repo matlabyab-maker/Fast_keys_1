@@ -1,3 +1,6 @@
 Fast_Keys_1
 Reset فراخوانی 20
 مرجع طراحی: DESIGN_REFERENCE/reset20_keyboard_reference.png
+
+
+Fix 6: removed invalid getToken() calls from subtype switching; arrow navigation uses editor DPAD events with selection fallback.
