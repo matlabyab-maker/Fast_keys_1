@@ -136,7 +136,7 @@ public class FastKeysKeyboardView extends View {
 
         popup.showAtLocation(this, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 8);
         drawerOpen = true;
-        popup.setOnDismissListener(v -> drawerOpen = false);
+        popup.setOnDismissListener(() -> drawerOpen = false);
     }
 
     private Button drawerButton(String text) {
@@ -495,7 +495,9 @@ public class FastKeysKeyboardView extends View {
         float[] wt={.55f,1.45f,1.55f,1.05f,1.0f,1.0f,1.0f,1.25f,.55f};
         String[] top={"","Copy All","Copy Screen","Paste","Cut","Undo","Redo","100\nHistory","⌄"};
         row(c,y,wt,top);
-        drawMousePointer(c, gap, y, gap + wt[0] * ((w-gap*(wt.length+1))/java.util.Arrays.stream(wt).sum()), y + keyH);
+        float wtSum = 0f;
+        for (float value : wt) wtSum += value;
+        drawMousePointer(c, gap, y, gap + wt[0] * ((w-gap*(wt.length+1))/wtSum), y + keyH);
 
         y+=keyH+gap;
         String[] sug={suggestions[0],suggestions[1],suggestions[2]};
